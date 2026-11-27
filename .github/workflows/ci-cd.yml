@@ -185,7 +185,7 @@ jobs:
 
       - name: Construir imagen con SHA del commit
         env:
-          IMAGE: ghcr.io/${{ github.repository }}
+          IMAGE: ghcr.io/rojasebastian/ev3-om
           SHA: ${{ github.sha }}
         run: |
           docker build --build-arg APP_COMMIT_SHA="$SHA" --tag "$IMAGE:sha-$SHA" .

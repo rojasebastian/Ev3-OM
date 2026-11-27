@@ -192,7 +192,7 @@ jobs:
 
       - name: Verificar que la imagen no corre como root
         env:
-          IMAGE: ghcr.io/${{ github.repository }}
+          IMAGE: ghcr.io/rojasebastian/ev3-om
           SHA: ${{ github.sha }}
         run: |
           USER_ID="$(docker image inspect "$IMAGE:sha-$SHA" --format '{{.Config.User}}')"
@@ -202,7 +202,7 @@ jobs:
         # Fijada por SHA completo (v0.36.0): mantener el pin evita confiar solo en tags mutables.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          image-ref: ghcr.io/rojasebastian/ev3-om:sha-${{ github.sha }}
           scan-type: image
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -217,7 +217,7 @@ jobs:
 
       - name: Verificar imagen con Compose y smoke test
         env:
-          APP_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          APP_IMAGE: ghcr.io/rojasebastian/ev3-om:sha-${{ github.sha }}
           APP_COMMIT_SHA: ${{ github.sha }}
           DB_USER: order_user
           DB_PASSWORD: ${{ steps.db-credentials.outputs.password }}
@@ -238,7 +238,7 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ghcr.io/${{ github.repository }}
+          IMAGE: ghcr.io/rojasebastian/ev3-om
           SHA: ${{ github.sha }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -268,7 +268,7 @@ jobs:
 
       - name: Desplegar imagen y validar commit
         env:
-          APP_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          APP_IMAGE: ghcr.io/rojasebastian/ev3-om:sha-${{ github.sha }}
           APP_COMMIT_SHA: ${{ github.sha }}
           DB_USER: order_user
           DB_PASSWORD: ${{ steps.db-credentials.outputs.password }}
@@ -283,7 +283,7 @@ jobs:
       - name: Guardar registro del despliegue
         if: success()
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          IMAGE: ghcr.io/rojasebastian/ev3-om:sha-${{ github.sha }}
         run: |
           python - <<'PY'
           import json, os
@@ -330,7 +330,7 @@ jobs:
     permissions:
       contents: read
     env:
-      IMAGE: ghcr.io/${{ github.repository }}
+      IMAGE: ghcr.io/rojasebastian/ev3-om
       SHA: ${{ github.sha }}
     steps:
       - name: Obtener código

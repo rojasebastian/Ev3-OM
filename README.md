@@ -1,6 +1,6 @@
 # 📦 Order Manager API
 
-[![CI/CD Pipeline](https://github.com/karlahp/order-manager-eva02/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/karlahp/order-manager-eva02/actions/workflows/ci-cd.yml)
+[![CI/CD Pipeline](https://github.com/rojasebastian/Ev3-OM/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/rojasebastian/Ev3-OM/actions/workflows/ci-cd.yml)
 [![Java](https://img.shields.io/badge/Java-17-blue.svg)](https://openjdk.org/projects/jdk/17/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Docker](https://img.shields.io/badge/Docker-multi--stage-blue.svg)](https://www.docker.com/)
@@ -46,7 +46,7 @@ PENDING ──► CONFIRMED ──► SHIPPED ──► DELIVERED
 | Indicador | Qué exige | Dónde se evidencia |
 |---|---|---|
 | **IE1** Contenedores | Dockerfile + construcción de imagen en el pipeline | [`Dockerfile`](Dockerfile) multi-etapa, [`.dockerignore`](.dockerignore), job `build` de [`ci-cd.yml`](.github/workflows/ci-cd.yml) |
-| **IE2** Pruebas automatizadas | Pruebas unitarias en CI según políticas de calidad | 69 pruebas JUnit 5/Mockito + integración (`src/test`), cobertura mínima **75 %** forzada por JaCoCo, job `test` |
+| **IE2** Pruebas automatizadas | Pruebas unitarias en CI según políticas de calidad | 79 pruebas JUnit 5/Mockito + integración (`src/test`), cobertura mínima **75 %** forzada por JaCoCo, job `test` |
 | **IE3** Escalabilidad y seguridad | Análisis estático, actualizaciones de dependencias, alertas y controles del contenedor | SonarCloud en el job `sonar`, actualizaciones de Dependabot, alerta del job `alert` ante fallos en `push`, controles del contenedor y límites de recursos. Los manifiestos incluyen HPA, pero no se ha demostrado su ejecución en un clúster. |
 | **IE4** Despliegue y trazabilidad | Deploy automático en entorno simulado + README | job `deploy` (Docker Compose), imagen etiquetada con el SHA, `/actuator/info`, registro de despliegue |
 | **IE5** Orquestación | Kubernetes o Docker Compose | [`docker-compose.yml`](docker-compose.yml) se ejecutó en el pipeline con la API y PostgreSQL. También se incluyen manifiestos en [`k8s/`](k8s/), sin evidencia de aplicación en un clúster. |
@@ -433,7 +433,7 @@ curl -s localhost:8098/actuator/info | jq .app.commit
 
 ### Reportes disponibles
 - **Surefire + JaCoCo:** artefacto `reportes-calidad` en cada ejecución; ahí se consulta el reporte de cobertura validado por el umbral del 75 %.
-- **Cobertura verificada con JaCoCo:** en la ejecución de `main` [#40427007011](https://github.com/karlahp/order-manager-eva02/actions/runs/40427007011) (commit `08e1fab`) el reporte global registró **96,72 % de líneas (177/183)**, **98,15 % de ramas (53/54)** y **69 pruebas ejecutadas, 0 fallos y 0 errores**. El `pom.xml` mantiene el umbral bloqueante de 75 % de líneas en `mvn clean verify`; el reporte HTML/XML está disponible en el artefacto `reportes-calidad`. Este registro corresponde al commit indicado, no garantiza por sí solo el resultado de commits posteriores.
+- **Cobertura verificada con JaCoCo:** en la ejecución de `main` [run #9](https://github.com/rojasebastian/Ev3-OM/actions/runs/46076605551) (commit `7259d0c`) el reporte registró **97,54 % de líneas (238/244)**, **98,33 % de ramas (59/60)** y **79 pruebas ejecutadas, 0 fallos y 0 errores**. El `pom.xml` mantiene el umbral bloqueante de 75 % de líneas; el reporte HTML/XML está disponible en el artefacto `reportes-calidad`. Estos resultados corresponden a ese commit.
 - **Historial de despliegues:** pestaña *Actions* y *Environments* de GitHub.
 
 ---
@@ -452,7 +452,7 @@ curl -s localhost:8098/actuator/info | jq .app.commit
 - La declaración identifica las herramientas de IA utilizadas y las tareas en que apoyaron al equipo.
 
 ### Validación
-La ejecución [#40427007011 de `main`](https://github.com/karlahp/order-manager-eva02/actions/runs/40427007011), del 27/10/2026 y commit `08e1fab`, terminó con resultado `success`: pasaron pruebas/cobertura, SonarCloud, renderizado de manifiestos Kubernetes, construcción Docker, escaneo Trivy, smoke test con Docker Compose y despliegue simulado. Se publicaron los artefactos `reportes-calidad`, `manifiestos-kubernetes` y `deployment-record`. En esa ejecución JaCoCo registró 96,72 % de líneas (177/183), por encima del mínimo bloqueante de 75 %. La imagen del commit `08e1fab` fue reconstruida y pasó el escaneo Trivy con bloqueo de severidad `HIGH,CRITICAL`; el paquete `brotli-libs` quedó en `1.2.1-r0` para corregir `CVE-2026-111497`. El registro `deployment-record` confirma que el despliegue simulado terminó correctamente. Esta evidencia corresponde al commit enlazado.
+La ejecución de `main` [run #9](https://github.com/rojasebastian/Ev3-OM/actions/runs/46076605551), del 27/11/2026 y commit `7259d0c`, terminó con resultado `success`: pasaron pruebas/cobertura, SonarCloud, renderizado de manifiestos Kubernetes, construcción Docker, escaneo Trivy, smoke test con Docker Compose y despliegue simulado. Se publicaron los artefactos `reportes-calidad`, `manifiestos-kubernetes` y `deployment-record`. En esa ejecución JaCoCo registró 97,54 % de líneas (238/244), por encima del mínimo bloqueante de 75 %. Esta evidencia corresponde al commit enlazado.
 
 ### Referencias
 - Política institucional de uso de IA: <https://bibliotecas.duoc.cl/ia>

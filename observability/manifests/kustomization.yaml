@@ -1,0 +1,21 @@
+# Configuración de monitoreo de Order Manager (EV3 - IE2).
+# Se aplica DESPUÉS de instalar kube-prometheus-stack (aporta los CRDs ServiceMonitor y PrometheusRule):
+#   kubectl apply -k observability/manifests/
+# El job deploy-k8s del pipeline lo hace automáticamente en cada despliegue.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+# El dashboard vive en un archivo JSON (editable e importable en Grafana). El sidecar de
+# Grafana detecta cualquier ConfigMap con la etiqueta grafana_dashboard=1 y lo carga solo.
+configMapGenerator:
+  - name: order-manager-dashboard
+    files:
+      - order-manager-dashboard.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/part-of: order-manager

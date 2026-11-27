@@ -1,0 +1,89 @@
+# Alertas de Order Manager. Se ven en Prometheus (Alerts) y en Grafana (Alerting > Alert rules).
+# Cada regla incluye una "decision" para el equipo: qué hacer cuando se dispara (ver docs/observabilidad.md).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: order-manager
+  labels:
+    app.kubernetes.io/name: order-manager
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: order-manager.disponibilidad
+      rules:
+        - alert: OrderManagerDown
+          expr: absent(up{namespace="order-manager", service="order-manager"} == 1)
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Order Manager no responde"
+            decision: "Ninguna réplica es scrapeable. Revisar pods y logs; si ocurrió tras un despliegue, hacer rollback."
+        - alert: OrderManagerPodRestarts
+          expr: increase(kube_pod_container_status_restarts_total{namespace="order-manager", container="order-manager"}[15m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Un pod de Order Manager se reinicia de forma repetida"
+            decision: "Revisar OOMKilled o fallos de liveness; evaluar subir el límite de memoria."
+    - name: order-manager.errores
+      rules:
+        - alert: OrderManagerHighErrorRate
+          expr: |
+            sum(rate(http_server_requests_seconds_count{namespace="order-manager", status=~"5.."}[5m]))
+              / sum(rate(http_server_requests_seconds_count{namespace="order-manager"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Más de 5 % de respuestas 5xx"
+            decision: "Abrir el panel de errores en Loki, ubicar la excepción por requestId y decidir rollback o hotfix."
+        - alert: OrderManagerHighLatency
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{namespace="order-manager"}[5m]))) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Latencia p95 superior a 500 ms"
+            decision: "Revisar CPU y pool de conexiones; si la CPU supera el 70 %, el HPA debería estar escalando."
+    - name: order-manager.recursos
+      rules:
+        - alert: OrderManagerHighMemory
+          expr: |
+            sum by (pod) (container_memory_working_set_bytes{namespace="order-manager", container="order-manager"})
+              / sum by (pod) (kube_pod_container_resource_limits{namespace="order-manager", container="order-manager", resource="memory"}) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Un pod usa más de 85 % de su límite de memoria"
+            decision: "Riesgo de OOM. Ajustar límites o buscar fugas antes del siguiente despliegue."
+        - alert: OrderManagerHighCPU
+          expr: |
+            sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="order-manager", container="order-manager"}[5m]))
+              / sum by (pod) (kube_pod_container_resource_limits{namespace="order-manager", container="order-manager", resource="cpu"}) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Un pod usa más de 85 % de su límite de CPU"
+            decision: "Si el HPA ya está en el máximo de réplicas, subir maxReplicas o el límite de CPU."
+    - name: order-manager.cicd
+      rules:
+        - alert: OrderManagerLowTestCoverage
+          expr: ci_test_coverage_ratio{job="order-manager-ci"} < 0.75
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "La cobertura del último despliegue está bajo el mínimo de 75 %"
+            decision: "No debería ocurrir (JaCoCo bloquea el pipeline). Si aparece, revisar que no se haya debilitado la política."
+        - alert: OrderManagerSlowDeploy
+          expr: ci_deploy_duration_seconds{job="order-manager-ci"} > 420
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "El último despliegue tardó más de 7 minutos"
+            decision: "Revisar probes, descarga de la imagen y recursos del nodo."

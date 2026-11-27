@@ -1,0 +1,57 @@
+# Prometheus + Grafana + kube-state-metrics + node-exporter.
+# Valores pensados para un clúster pequeño (k3s en una instancia EC2 de 8 GB).
+alertmanager:
+  enabled: false          # las alertas se ven en Prometheus y Grafana; sin correo para simplificar
+
+defaultRules:
+  rules:                  # k3s no expone estos componentes: evita alertas "TargetDown" falsas
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeProxy: false
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    # Descubre ServiceMonitor, PodMonitor y PrometheusRule de cualquier namespace,
+    # no solo los creados por este chart.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { memory: 1Gi }
+
+grafana:
+  # La contraseña NO se escribe aquí: install-monitoring.sh crea el Secret "grafana-admin".
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: NodePort
+    nodePort: 30300       # http://<IP_PUBLICA>:30300  (abrir solo a tu IP en el Security Group)
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      isDefault: false

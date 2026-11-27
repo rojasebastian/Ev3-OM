@@ -1,0 +1,17 @@
+# Loki (almacén de logs) + Promtail (agente que lee los logs de cada pod).
+# Grafana ya viene con kube-prometheus-stack, por eso se desactiva aquí.
+loki:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+promtail:
+  enabled: true
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 128Mi }
+grafana:
+  enabled: false

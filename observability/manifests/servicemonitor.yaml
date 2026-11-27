@@ -1,0 +1,21 @@
+# Le indica a Prometheus que debe scrapear la API cada 15 s.
+# El Service "order-manager" (namespace order-manager) expone el puerto "http".
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: order-manager
+  labels:
+    app.kubernetes.io/name: order-manager
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - order-manager
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-manager
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s

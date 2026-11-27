@@ -1,0 +1,460 @@
+name: CI/CD Order Manager
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: order-manager-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Pruebas y cobertura
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Métricas de calidad que el despliegue envía al dashboard (EV3 - IE3)
+    outputs:
+      coverage: ${{ steps.quality.outputs.coverage }}
+      tests: ${{ steps.quality.outputs.tests }}
+      failures: ${{ steps.quality.outputs.failures }}
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      - name: Configurar Java 17 y caché Maven
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Ejecutar pruebas y umbral JaCoCo
+        run: mvn -B -ntp clean verify
+
+      - name: Extraer métricas de calidad (cobertura y pruebas)
+        id: quality
+        run: python3 scripts/extract-quality-metrics.py | tee -a "$GITHUB_OUTPUT"
+
+      - name: Publicar reportes de pruebas y cobertura
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: reportes-calidad
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 14
+
+  sonar:
+    name: SonarCloud (Quality Gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # GitHub no entrega secrets a PR de forks ni a PR creados por Dependabot.
+    # En ambos casos, el análisis se ejecuta al integrar el cambio en main.
+    if: >-
+      github.event_name != 'pull_request' || (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]'
+      )
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Java 21 para SonarCloud y caché Maven
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Exigir configuración de SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        run: |
+          test -n "$SONAR_TOKEN" || { echo "Falta el secret SONAR_TOKEN"; exit 1; }
+          test -n "$SONAR_ORGANIZATION" || { echo "Falta la variable SONAR_ORGANIZATION"; exit 1; }
+          test -n "$SONAR_PROJECT_KEY" || { echo "Falta la variable SONAR_PROJECT_KEY"; exit 1; }
+
+      - name: Ejecutar análisis y esperar Quality Gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        run: >-
+          mvn -B -ntp clean verify
+          org.sonarsource.scanner.maven:sonar-maven-plugin:3.11.0.3922:sonar
+          -Dsonar.organization="$SONAR_ORGANIZATION"
+          -Dsonar.projectKey="$SONAR_PROJECT_KEY"
+          -Dsonar.token="$SONAR_TOKEN"
+          -Dsonar.qualitygate.wait=true
+
+  k8s-validate:
+    name: Validar manifiestos Kubernetes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      - name: Configurar kubectl
+        uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: 'v1.31.0'
+
+      - name: Renderizar manifiestos con Kustomize
+        run: |
+          kubectl kustomize k8s/ > /tmp/order-manager-rendered.yaml
+          test -s /tmp/order-manager-rendered.yaml
+          echo "Los manifiestos de k8s/ se renderizaron correctamente."
+
+      - name: Renderizar manifiestos de observabilidad (ServiceMonitor, alertas, dashboard)
+        run: |
+          kubectl kustomize observability/manifests/ >> /tmp/order-manager-rendered.yaml
+          grep -q 'kind: PrometheusRule' /tmp/order-manager-rendered.yaml
+          grep -q 'grafana_dashboard' /tmp/order-manager-rendered.yaml
+          echo "Los manifiestos de observability/ se renderizaron correctamente."
+
+      - name: Guardar manifiestos renderizados
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: manifiestos-kubernetes
+          path: /tmp/order-manager-rendered.yaml
+          if-no-files-found: error
+          retention-days: 14
+
+  compliance:
+    name: Auditoría de cumplimiento
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      # Políticas como código (IE5): contenedor, Kubernetes, secretos, umbrales de calidad,
+      # pipeline y observabilidad. Si una política se incumple, el script sale con código 1.
+      - name: Auditar políticas de seguridad y calidad
+        run: bash scripts/audit-compliance.sh
+
+      - name: Detectar secretos en el repositorio (Trivy)
+        # Mismo SHA fijado que en el escaneo de imagen (v0.36.0).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: '1'
+
+      - name: Publicar reporte de auditoría
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: reporte-auditoria
+          path: audit-report.md
+          if-no-files-found: warn
+          retention-days: 90
+
+  build:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [test, sonar, k8s-validate, compliance]
+    # Un análisis omitido solo es admisible en PR de forks o Dependabot, que no reciben secrets.
+    if: >-
+      always() && needs.test.result == 'success' &&
+      needs.k8s-validate.result == 'success' &&
+      needs.compliance.result == 'success' &&
+      (needs.sonar.result == 'success' || needs.sonar.result == 'skipped')     
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      - name: Construir imagen con SHA del commit
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          docker build --build-arg APP_COMMIT_SHA="$SHA" --tag "$IMAGE:sha-$SHA" .
+
+      - name: Verificar que la imagen no corre como root
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          USER_ID="$(docker image inspect "$IMAGE:sha-$SHA" --format '{{.Config.User}}')"
+          test "$USER_ID" = "10001:10001" || { echo "Usuario inesperado: $USER_ID"; exit 1; }
+
+      - name: Escanear vulnerabilidades de la imagen (Trivy)
+        # Fijada por SHA completo (v0.36.0): mantener el pin evita confiar solo en tags mutables.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          scan-type: image
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generar contraseña efímera de PostgreSQL
+        id: db-credentials
+        run: |
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          echo "password=$password" >> "$GITHUB_OUTPUT"
+
+      - name: Verificar imagen con Compose y smoke test
+        env:
+          APP_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          APP_COMMIT_SHA: ${{ github.sha }}
+          DB_USER: order_user
+          DB_PASSWORD: ${{ steps.db-credentials.outputs.password }}
+          DB_NAME: orderdb
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 90
+          bash scripts/smoke-test.sh http://localhost:8098 "$APP_COMMIT_SHA"
+
+      - name: Limpiar entorno de integración
+        if: always()
+        env:
+          DB_USER: order_user
+          DB_PASSWORD: cleanup-only
+          DB_NAME: orderdb
+        run: docker compose down --volumes --remove-orphans
+
+      - name: Publicar imagen verificada en GHCR
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:sha-$SHA"
+
+  deploy:
+    name: Despliegue simulado
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [test, sonar, compliance, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: simulated-cloud
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      - name: Generar contraseña efímera de PostgreSQL
+        id: db-credentials
+        run: |
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          echo "password=$password" >> "$GITHUB_OUTPUT"
+
+      - name: Desplegar imagen y validar commit
+        env:
+          APP_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          APP_COMMIT_SHA: ${{ github.sha }}
+          DB_USER: order_user
+          DB_PASSWORD: ${{ steps.db-credentials.outputs.password }}
+          DB_NAME: orderdb
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker compose pull
+          docker compose up -d --no-build --wait --wait-timeout 90
+          bash scripts/smoke-test.sh http://localhost:8098 "$APP_COMMIT_SHA"
+
+      - name: Guardar registro del despliegue
+        if: success()
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json, os
+          record = {
+              "commit": os.environ["GITHUB_SHA"],
+              "actor": os.environ["GITHUB_ACTOR"],
+              "branch": os.environ["GITHUB_REF_NAME"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "image": os.environ["IMAGE"],
+              "run_url": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          }
+          with open("deployment-record.json", "w", encoding="utf-8") as file:
+              json.dump(record, file, indent=2)
+          PY
+
+      - name: Publicar registro del despliegue
+        if: success()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: deployment-record
+          path: deployment-record.json
+          retention-days: 90
+
+      - name: Limpiar entorno simulado
+        if: always()
+        env:
+          DB_USER: order_user
+          DB_PASSWORD: cleanup-only
+          DB_NAME: orderdb
+        run: docker compose down --volumes --remove-orphans
+
+  deploy-k8s:
+    name: Despliegue en Kubernetes (nube)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [test, compliance, build, deploy]
+    # Solo se ejecuta cuando el clúster existe: definir la variable K8S_DEPLOY_ENABLED=true
+    # y el secret KUBE_CONFIG_B64 (ver docs/despliegue-aws.md).
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      vars.K8S_DEPLOY_ENABLED == 'true'
+    environment:
+      name: aws-k3s
+    permissions:
+      contents: read
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v7.0.1
+
+      - name: Configurar kubectl
+        uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: 'v1.31.0'
+
+      - name: Conectar con el clúster
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          test -n "$KUBE_CONFIG_B64" || { echo "Falta el secret KUBE_CONFIG_B64"; exit 1; }
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl get nodes
+
+      - name: Verificar que la pila de observabilidad está instalada
+        run: |
+          kubectl get crd servicemonitors.monitoring.coreos.com prometheusrules.monitoring.coreos.com \
+            || { echo "Falta instalar la observabilidad: bash observability/install-monitoring.sh"; exit 1; }
+
+      - name: Desplegar Order Manager
+        id: deploy
+        run: |
+          START=$(date +%s)
+          kubectl apply -f k8s/namespace.yaml
+          # El Secret de la base de datos se crea una sola vez con clave aleatoria (nunca en Git).
+          kubectl -n order-manager get secret order-manager-db >/dev/null 2>&1 || \
+            kubectl -n order-manager create secret generic order-manager-db \
+              --from-literal=DB_USER=order_user \
+              --from-literal=DB_PASSWORD="$(openssl rand -hex 16)"
+          # Apunta el Deployment a la imagen de ESTE commit (trazabilidad)
+          sed -i "s|newName: order-manager|newName: ${IMAGE}|; s|newTag: local|newTag: sha-${SHA}|" k8s/kustomization.yaml
+          kubectl apply -k k8s/
+          # Monitoreo configurado de forma automática en cada despliegue (IE2)
+          kubectl apply -k observability/manifests/
+          kubectl -n order-manager rollout status statefulset/postgres --timeout=300s
+          kubectl -n order-manager rollout status deployment/order-manager --timeout=300s
+          echo "seconds=$(( $(date +%s) - START ))" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test contra el clúster
+        run: |
+          kubectl -n order-manager port-forward svc/order-manager 8098:8098 >/tmp/pf-app.log 2>&1 &
+          sleep 5
+          bash scripts/smoke-test.sh http://localhost:8098 "$SHA"
+
+      - name: Enviar métricas del pipeline a Prometheus (Pushgateway)
+        # No bloquea el despliegue: si el Pushgateway no responde, solo se pierde el dato del dashboard.
+        continue-on-error: true
+        env:
+          DEPLOY_SECONDS: ${{ steps.deploy.outputs.seconds }}
+          COVERAGE: ${{ needs.test.outputs.coverage }}
+          TESTS: ${{ needs.test.outputs.tests }}
+          FAILURES: ${{ needs.test.outputs.failures }}
+          COMMIT: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          kubectl -n monitoring port-forward svc/pushgateway 9091:9091 >/tmp/pf-push.log 2>&1 &
+          sleep 5
+          PUSHGATEWAY_URL=http://localhost:9091 bash scripts/push-ci-metrics.sh
+
+      - name: Rollback automático si algo falló
+        if: failure()
+        run: |
+          echo "::error::El despliegue falló: se vuelve a la revisión anterior."
+          kubectl -n order-manager rollout undo deployment/order-manager || true
+          kubectl -n order-manager rollout status deployment/order-manager --timeout=180s || true
+
+      - name: Guardar registro del despliegue
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          record = {
+              "commit": os.environ["GITHUB_SHA"],
+              "actor": os.environ["GITHUB_ACTOR"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "image": f"{os.environ['IMAGE']}:sha-{os.environ['GITHUB_SHA']}",
+              "target": "kubernetes (k3s en AWS EC2)",
+              "deploy_seconds": int("${{ steps.deploy.outputs.seconds }}"),
+          }
+          with open("deployment-record-k8s.json", "w", encoding="utf-8") as file:
+              json.dump(record, file, indent=2)
+          PY
+
+      - name: Publicar registro del despliegue
+        if: success()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: deployment-record-k8s
+          path: deployment-record-k8s.json
+          retention-days: 90
+
+  alert:
+    name: Alertar fallo del pipeline
+    runs-on: ubuntu-latest
+    needs: [test, sonar, k8s-validate, compliance, build, deploy, deploy-k8s]
+    if: failure() && github.event_name == 'push'
+    permissions:
+      issues: write
+      actions: read
+    steps:
+      - name: Crear o actualizar Issue de alerta
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            const title = `[CI] Falló el pipeline en ${branch}`;
+            const body = [
+              `Falló el pipeline en el commit \`${context.sha}\`.`,
+              `Rama: \`${branch}\`.`,
+              `Ejecución: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            ].join('\n\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', per_page: 100
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body });
+            }

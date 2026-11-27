@@ -1,0 +1,12 @@
+# Pushgateway: recibe las métricas del PIPELINE (duración del despliegue, cobertura, pruebas)
+# y Prometheus las scrapea. El pipeline llega hasta él con "kubectl port-forward"; no se expone a Internet.
+fullnameOverride: pushgateway
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  honorLabels: true       # conserva job="order-manager-ci" tal como lo envía el pipeline
+  additionalLabels:
+    release: kube-prometheus-stack
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits: { memory: 64Mi }

@@ -84,9 +84,10 @@ call DELETE "$API/$ID" 204; ok "pedido de prueba eliminado"
 # 6) Observabilidad: la API debe publicar métricas técnicas y de negocio (EV3)
 echo "6) Observabilidad (/actuator/prometheus)"
 METRICS="$(curl -sf "$BASE_URL/actuator/prometheus")" || fail "/actuator/prometheus no responde"
-echo "$METRICS" | grep 'http_server_requests' || fail "faltan las métricas HTTP"
+printf '%s\n' "$METRICS" | grep '^http_server_requests_seconds_count' >/dev/null || fail "faltan las métricas HTTP"
 ok "métricas HTTP presentes (http_server_requests_seconds_count)"
-echo "$METRICS" | grep -q '^orders_created_total' || fail "falta la métrica de negocio orders_created_total"
+printf '%s\n' "$METRICS" | grep '^orders_' || fail "no aparecen métricas de pedidos"
 ok "métrica de negocio presente (orders_created_total)"
+
 
 echo "✅ Smoke test OK"

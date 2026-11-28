@@ -465,26 +465,17 @@ Cada integrante debe completar su reflexión personal a partir de su propia expe
 
 ### Reflexión — Karla Hoch
 
-En este proyecto pude consolidar mejor cómo se relacionan la integración continua, los contenedores Docker y los test automáticos, apoyándome además en GitHub Desktop para gestionar los commits de forma más fluida. Desde el comienzo me involucré preparando el entorno de trabajo del grupo, lo que nos permitió organizarnos bien y cumplir con los tiempos de entrega.
+En este proyecto participé revisando y adaptando código y configuraciones, colaborando en la revisión de errores del pipeline y en las decisiones y documentación del equipo. Aprendí cómo se relacionan las pruebas, el pipeline y el despliegue, además de interpretar métricas en Grafana y entender cómo Kubernetes y Prometheus ayudan a monitorear un servicio.
 
-Lo más complejo fue descifrar las fallas del código y entender los mensajes que arrojaba GitHub Actions, sobre todo cuando los intentos de solución no funcionaban al primer intento. Mi rol principal consistió en aportar a la toma de decisiones, investigar alternativas por mi cuenta y colaborar de cerca para resolver los problemas en conjunto.
-
-Si tuviera que volver a empezar, me aseguraría de repasar la materia y las herramientas antes de escribir código. También analizaría los registros de fallas apenas aparezca el primer aviso, evitando perder tiempo adivinando soluciones y enfocándome de inmediato en el problema real.
-También el hecho de organizarnos mejor, para evitar tener problema con los códigos a último minuto cuando se acerca la entrega del trabajo.
-Preguntas guía: ¿Qué aprendiste que no sabías antes? ¿Cuál fue el mayor desafío técnico y cómo lo resolviste? ¿Qué harías distinto? ¿Cómo contribuiste al proyecto?
+Una dificultad fue comprender algunos errores del pipeline. Los revisamos en conjunto y corregimos la configuración; también coordinamos la integración de los cambios revisando los resultados entre ambos. En otro proyecto probaría el despliegue y el monitoreo antes de la etapa final, y organizaría con más anticipación las tareas y las evidencias.
 
 ---
 
 ### Reflexión — Sebastián Huaiquimilla
 
-Este trabajo me permitió conectar de forma clara y práctica conceptos vistos anteriormente en la asignatura, tales como las distintas etapas de un flujo de CI/CD, la contenedorización mediante Docker y la correcta integración de pruebas automatizadas en un entorno real.
+En la EV3 participé en la configuración de variables y secretos del pipeline, en la preparación del clúster k3s en AWS y en la revisión del monitoreo y el dashboard de Grafana. Con este trabajo aprendí cómo conectar un pipeline CI/CD con un despliegue en Kubernetes y cómo Prometheus y Grafana permiten visualizar métricas de una aplicación.
 
-La mayor dificultad a la que nos enfrentamos estuvo en el proceso de depuración, en especial al corregir los fallos que surgían durante el desarrollo, entendiendo exactamente qué estaba fallando y cuál era la mejor manera de arreglarlo. Por mi parte, mi aporte principal fue la colaboración constante: participé activamente en la toma de decisiones, revisé el código y analicé cada error trabajando codo a codo con mi compañera desde el mismo computador.
-
-De cara a próximos proyectos, lo que haría diferente es revisar minuciosamente los logs desde el primer fallo que aparezca, en lugar de intentar hacer cambios a lo loco sin identificar primero la causa raíz, evitando así agrandar más los errores.
-
-Preguntas guía: ¿Qué concepto de DevOps comprendiste mejor al aplicar el pipeline? ¿Qué fue lo más complejo? ¿Cuál fue tu aporte concreto al equipo?
-
+Una de las dificultades fue corregir errores que aparecieron en GitHub Actions. Para resolverlos revisé los logs y ajusté la configuración. También tuve que revisar por qué algunos paneles del dashboard aparecían sin datos y comprobar la conexión con las métricas. Para un próximo proyecto, leería con más atención los logs completos antes de modificar código o configuración, para identificar primero la causa del problema y hacer cambios más precisos.
 ---
 
 ## 👥 Autores

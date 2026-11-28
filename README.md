@@ -474,8 +474,8 @@ Una dificultad fue comprender algunos errores del pipeline. Los revisamos en con
 ### Reflexión — Sebastián Huaiquimilla
 
 En la EV3 participé en la configuración de variables y secretos del pipeline, en la preparación del clúster k3s en AWS y en la revisión del monitoreo y el dashboard de Grafana. Con este trabajo aprendí cómo conectar un pipeline CI/CD con un despliegue en Kubernetes y cómo Prometheus y Grafana permiten visualizar métricas de una aplicación.
-
 Una de las dificultades fue corregir errores que aparecieron en GitHub Actions. Para resolverlos revisé los logs y ajusté la configuración. También tuve que revisar por qué algunos paneles del dashboard aparecían sin datos y comprobar la conexión con las métricas. Para un próximo proyecto, leería con más atención los logs completos antes de modificar código o configuración, para identificar primero la causa del problema y hacer cambios más precisos.
+
 ---
 
 ## 👥 Autores
